@@ -1,0 +1,25 @@
+{
+    "camera_type": "ip",
+    "ip_camera_url": "rtsp://admin:@Paneton1@192.168.18.28:8000/Streaming/Channels/101",
+    "camera_index": 0,
+    "resolution": {
+        "width": 1000,
+        "height": 500
+    },
+    "zoom": 1.0,
+    "capture_interval": 5,
+    "total_capture_time": 60,
+    "output_folder": "captures",
+    "brightness": 0,
+    "contrast": 32,
+    "saturation": 64,
+    "hue": 0,
+    "gain": 0,
+    "exposure": -4,
+    "focus": 0,
+    "autofocus": 0,
+    "white_balance": 4000,
+    "auto_white_balance": 1,
+    "flip_horizontal": false,
+    "flip_vertical": false
+}

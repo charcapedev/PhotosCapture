@@ -1,0 +1,23 @@
+# Entorno virtual de Python
+venv_photoscapture/
+venv/
+.env/
+.venv/
+env/
+
+# Carpeta de capturas
+captures/
+
+# Archivos generados por Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Configuraciones de IDE
+.idea/
+.vscode/
+
+# Archivos temporales
+*.tmp
+*.bak
+*.swp
