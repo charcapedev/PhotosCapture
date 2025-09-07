@@ -1,6 +1,7 @@
 import cv2
 import json
 import os
+import time
 
 class CameraConfig:
     def __init__(self, config_file='config.json'):
@@ -23,35 +24,79 @@ class CameraController:
         self.window_name = "Vista Previa - Presione 'q' para salir"
         
     def initialize_camera(self):
-        """Inicializa la cámara con vista previa"""
+        """Inicializa la cámara con vista previa - Versión completa con parámetros AMCAP"""
         try:
+            print("Inicializando cámara...")
+            
             if self.config.config["camera_type"] == "ip":
                 self.cap = cv2.VideoCapture(self.config.config["ip_camera_url"], cv2.CAP_FFMPEG)
+                time.sleep(2)
             else:
-                self.cap = cv2.VideoCapture(self.config.config["camera_index"])
-                
-                # Configuración de propiedades para cámaras USB/built-in
-                if self.cap.isOpened():
-                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.config["resolution"]["width"])
-                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.config["resolution"]["height"])
-                    self.cap.set(cv2.CAP_PROP_AUTOFOCUS, int(self.config.config["autofocus"]))
-                    self.cap.set(cv2.CAP_PROP_AUTO_WB, int(self.config.config["auto_white_balance"]))
+                self.cap = cv2.VideoCapture(self.config.config["camera_index"], cv2.CAP_DSHOW)
             
             if not self.cap.isOpened():
-                raise ConnectionError("No se pudo abrir la cámara")
+                print("Primer intento fallido, probando método alternativo...")
+                self.cap = cv2.VideoCapture(self.config.config["camera_index"], cv2.CAP_ANY)
+                time.sleep(1)
                 
+            if not self.cap.isOpened():
+                raise ConnectionError("No se pudo abrir la cámara después de 2 intentos")
+            
+            # Configurar todas las propiedades de AMCAP
+            if self.config.config["camera_type"] == "usb":
+                # Mapeo de propiedades AMCAP a OpenCV
+                amcap_properties = [
+                    (cv2.CAP_PROP_BRIGHTNESS, "brightness", 0),
+                    (cv2.CAP_PROP_CONTRAST, "contrast", 2),
+                    (cv2.CAP_PROP_SATURATION, "saturation", 48),
+                    (cv2.CAP_PROP_GAIN, "gain", 32),
+                    (cv2.CAP_PROP_EXPOSURE, "exposure", 0),
+                    (cv2.CAP_PROP_HUE, "hue", 0),
+                    (cv2.CAP_PROP_SHARPNESS, "sharpness", 0),
+                    (cv2.CAP_PROP_GAMMA, "gamma", 100),
+                ]
+                
+                print("Configurando parámetros de cámara...")
+                for prop_code, prop_name, default_value in amcap_properties:
+                    try:
+                        # Usar valor del config o el valor por defecto de AMCAP
+                        value = self.config.config.get(prop_name, default_value)
+                        success = self.cap.set(prop_code, value)
+                        if success:
+                            actual_value = self.cap.get(prop_code)
+                            print(f"✓ {prop_name}: {value} (ajustado a: {actual_value:.1f})")
+                        else:
+                            print(f"⚠ {prop_name}: No soportado por esta cámara")
+                        time.sleep(0.1)
+                    except Exception as e:
+                        print(f"⚠ Error configurando {prop_name}: {e}")
+            
+            # Configurar resolución
+            try:
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.config["resolution"]["width"])
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.config["resolution"]["height"])
+                time.sleep(0.2)
+            except:
+                print("⚠ No se pudo configurar resolución, usando valor por defecto")
+            
             # Crear ventana de vista previa
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-            if self.config.config["resolution"]:
-                cv2.resizeWindow(self.window_name, 
-                                self.config.config["resolution"]["width"], 
-                                self.config.config["resolution"]["height"])
+            cv2.resizeWindow(self.window_name, 800, 600)
             
+            # Probar captura final
+            ret, frame = self.cap.read()
+            if not ret:
+                raise ConnectionError("Cámara abierta pero no puede capturar frames")
+                
+            print("✓ Cámara inicializada correctamente con parámetros AMCAP")
             return True
+            
         except Exception as e:
             print(f"Error al inicializar cámara: {str(e)}")
+            if self.cap:
+                self.cap.release()
             return False
-    
+        
     def show_preview(self, frame):
         """Muestra el frame en una ventana"""
         cv2.imshow(self.window_name, frame)
@@ -60,30 +105,33 @@ class CameraController:
             self.running = False
     
     def capture_frame(self):
-        """Captura y muestra un frame"""
-        ret, frame = self.cap.read()
-        if not ret:
-            raise ConnectionError("Error al capturar frame")
+        try:
+            ret, frame = self.cap.read()
+            if not ret:
+                print("Error capturando frame, reintentando...")
+                # Reintento simple
+                ret, frame = self.cap.read()
+                if not ret:
+                    raise ConnectionError("No se pudo capturar frame después de reintento")
             
-        # Aplicar zoom si está configurado
-        if self.config.config["zoom"] != 1.0:
-            h, w = frame.shape[:2]
-            center_x, center_y = w//2, h//2
-            radius_x = int(w/(2*self.config.config["zoom"]))
-            radius_y = int(h/(2*self.config.config["zoom"]))
-            frame = frame[center_y-radius_y:center_y+radius_y, center_x-radius_x:center_x+radius_x]
-            frame = cv2.resize(frame, (w, h))
+            # Aplicar volteos si están configurados (usar get para evitar errores)
+            flip_horizontal = self.config.config.get("flip_horizontal", False)
+            flip_vertical = self.config.config.get("flip_vertical", False)
             
-        # Aplicar volteos
-        if self.config.config["flip_horizontal"] or self.config.config["flip_vertical"]:
-            flip_code = 1 if self.config.config["flip_horizontal"] else 0
-            if self.config.config["flip_vertical"]:
-                flip_code = -1 if self.config.config["flip_horizontal"] else 0
-            frame = cv2.flip(frame, flip_code)
-        
-        # Mostrar vista previa
-        self.show_preview(frame)
-        return frame
+            if flip_horizontal or flip_vertical:
+                flip_code = 1 if flip_horizontal else 0
+                if flip_vertical:
+                    flip_code = -1 if flip_horizontal else 1
+                frame = cv2.flip(frame, flip_code)
+            
+            # Mostrar vista previa
+            self.show_preview(frame)
+            return frame
+            
+        except Exception as e:
+            print(f"Error en captura: {e}")
+            return None
+
     
     def release_camera(self):
         """Libera los recursos"""
