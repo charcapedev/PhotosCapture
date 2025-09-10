@@ -1,6 +1,7 @@
 {
     "camera_type": "usb",
     "camera_index": 1,
+    "capture_mode": "auto",  
     "resolution": {
         "width": 640,
         "height": 480
