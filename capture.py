@@ -26,7 +26,7 @@ class CaptureSystem:
         print(f"Imagen guardada: {filename}")
     
     def start_capture(self):
-        """Inicia el proceso de captura con vista previa - SIN HILOS"""
+        """Inicia el proceso de captura con vista previa"""
         if not self.camera.initialize_camera():
             print("No se pudo inicializar la cámara. Saliendo...")
             return False
@@ -38,56 +38,88 @@ class CaptureSystem:
         capture_mode = self.config.config.get("capture_mode", "auto")  # Modo por defecto: auto
         
         print("\n=== Sistema de Captura ===")
-        print(f"Presione 'q' para salir en cualquier momento")
-        print(f"Intervalo: {capture_interval}s | Total: {target_count} capturas")
+        print(f"Modo: {'AUTOMÁTICO' if capture_mode == 'auto' else 'MANUAL'}")
+        
+        if capture_mode == "auto":
+            print(f"Intervalo: {capture_interval}s | Total: {target_count} capturas")
+            print("Presione 'q' para salir en cualquier momento")
+        else:
+            print("Presione 'P' para capturar | 'q' para salir")  # <-- CAMBIADO A 'P'
+            print(f"Total máximo: {target_count} capturas")
+        
         print("Iniciando captura...")
         
-        print("\n=== Sistema de Captura ===")
-        if capture_mode == "auto":
-            print(f"Modo AUTOMÁTICO - Intervalo: {capture_interval}s")
-            print(f"Total: {target_count} capturas | Presione 'q' para salir")
-        else:
-            print("Modo MANUAL - Presione 'ESPACIO' para capturar")
-            print(f"Máximo: {target_count} capturas | 'q' para salir")
-        
         last_capture_time = time.time()
-    
+        error_count = 0
+        max_errors = 10  # Máximo de errores consecutivos antes de salir
+        
         try:
-            while self.camera.running and capture_count < target_count:
-                # Capturar frame
-                frame = self.camera.capture_frame()
-                if frame is None:
-                    continue
+            while self.camera.running and capture_count < target_count and error_count < max_errors:
+                current_time = time.time()
                 
-                # Lógica diferente según el modo
-                if capture_mode == "auto":
-                    # Modo automático
-                    current_time = time.time()
-                    if current_time - last_capture_time >= capture_interval:
-                        self.save_image(frame, capture_count)
-                        capture_count += 1
-                        last_capture_time = current_time
-                        print(f"Auto: {capture_count}/{target_count}")
-                else:
-                    # Modo manual - verificar tecla ESPACIO
-                    key = cv2.waitKey(1) & 0xFF
-                    if key == ord(' '):
-                        self.save_image(frame, capture_count)
-                        capture_count += 1
-                        print(f"Manual: {capture_count}/{target_count}")
-                        time.sleep(0.5)  # Evitar múltiples capturas
+                try:
+                    # Capturar frame
+                    frame = self.camera.capture_frame()
+                    
+                    if frame is None:
+                        error_count += 1
+                        print(f"Error en captura ({error_count}/{max_errors}). Reintentando...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        error_count = 0  # Resetear contador de errores
+                    
+                    # Diferente lógica según el modo
+                    if capture_mode == "auto":
+                        # Modo automático - captura por intervalo de tiempo
+                        if current_time - last_capture_time >= capture_interval:
+                            self.save_image(frame, capture_count)
+                            capture_count += 1
+                            last_capture_time = current_time
+                            print(f"Progreso: {capture_count}/{target_count}")
+                    
+                    else:
+                        # Modo manual - captura con tecla P
+                        key = cv2.waitKey(1) & 0xFF
+                        
+                        if key == ord('p') or key == ord('P'):  # Tecla P (mayúscula o minúscula)
+                            self.save_image(frame, capture_count)
+                            capture_count += 1
+                            print(f"Captura manual: {capture_count}/{target_count}")
+                            time.sleep(0.3)  # Pequeño delay para evitar múltiples capturas
+                        
+                        elif key == ord('q'):  # Tecla Q para salir
+                            print("\n✗ Captura manual detenida por el usuario")
+                            self.camera.running = False
+                            break
                 
-                # Pequeña pausa
+                except KeyboardInterrupt:
+                    print("\n✗ Captura detenida por el usuario")
+                    self.camera.running = False
+                    break
+                    
+                except Exception as e:
+                    error_count += 1
+                    print(f"Error inesperado ({error_count}/{max_errors}): {e}")
+                    time.sleep(1)
+                
+                # Pequeña pausa para no saturar
                 time.sleep(0.1)
             
-            print("\n✓ Captura completada")
+            if error_count >= max_errors:
+                print("\n✗ Demasiados errores consecutivos. Saliendo...")
+            elif capture_count >= target_count:
+                print("\n✓ Captura completada exitosamente")
+            else:
+                print("\n✗ Captura interrumpida")
+                
             return True
             
         except KeyboardInterrupt:
             print("\n✗ Captura detenida por el usuario")
             return False
         except Exception as e:
-            print(f"\n✗ Error: {e}")
+            print(f"\n✗ Error durante la captura: {e}")
             return False
         finally:
             self.camera.release_camera()
